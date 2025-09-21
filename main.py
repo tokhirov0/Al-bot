@@ -101,7 +101,6 @@ def ask_ai(prompt, max_tokens=800):
         resp.raise_for_status()
         j = resp.json()
 
-        # ✅ To‘g‘ri parsing
         if "choices" in j and j["choices"]:
             return j["choices"][0]["message"]["content"]
 
@@ -222,18 +221,15 @@ def handle_message(m):
     uid = m.chat.id
     add_user(uid)
 
-    # subscription check
     if not check_subscription(m.from_user.id):
         bot.send_message(m.chat.id, "❗ Botdan foydalanish uchun avvalo kanallarga obuna bo‘ling:", reply_markup=sub_buttons())
         return
 
-    # typing action
     try:
         bot.send_chat_action(uid, "typing")
     except:
         pass
 
-    # Ask AI
     prompt = m.text or ""
     reply = ask_ai(prompt)
     try:
@@ -260,7 +256,7 @@ def webhook():
 def index():
     return "AL-Bot is running", 200
 
-# ------------ Run (local) ------------
+# ------------ Run (local / Render) ------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
