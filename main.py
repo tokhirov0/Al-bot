@@ -1,56 +1,36 @@
 import os
 import json
 import logging
-import requests
 from flask import Flask, request
 from telebot import TeleBot, types
 from dotenv import load_dotenv
 
-# --- Logging ---
-logging.basicConfig(
-    filename='bot.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# ------------------ LOGGING ------------------
+logging.basicConfig(level=logging.INFO)
 
-# --- Muhit o‘zgaruvchilari ---
+# ------------------ ENV ----------------------
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
-bot = TeleBot(BOT_TOKEN)
+bot = TeleBot(BOT_TOKEN, parse_mode="HTML")
 app = Flask(__name__)
 
-# --- JSON fayllar ---
-USERS_FILE = "users.json"
+# ------------------ FILE HELPERS --------------
 CHANNELS_FILE = "channels.json"
+USERS_FILE = "users.json"
 
-def load_json(file, default):
-    if not os.path.exists(file):
-        with open(file, "w") as f:
+def load_json(path, default):
+    if not os.path.exists(path):
+        with open(path, "w") as f:
             json.dump(default, f)
-    with open(file, "r") as f:
+    with open(path, "r") as f:
         return json.load(f)
 
-def save_json(file, data):
-    with open(file, "w") as f:
-        json.dump(data, f, indent=4)
+def save_json(path, data):
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
 
-# --- Foydalanuvchilar ---
-def get_user(chat_id):
-    users = load_json(USERS_FILE, {})
-    if str(chat_id) not in users:
-        users[str(chat_id)] = {"messages": 0}
-        save_json(USERS_FILE, users)
-    return users[str(chat_id)]
-
-def update_user(chat_id, user_data):
-    users = load_json(USERS_FILE, {})
-    users[str(chat_id)] = user_data
-    save_json(USERS_FILE, users)
-
-# --- Kanallar ---
 def get_channels():
     return load_json(CHANNELS_FILE, [])
 
@@ -66,127 +46,138 @@ def remove_channel(channel):
         channels.remove(channel)
         save_json(CHANNELS_FILE, channels)
 
-# --- Kanal tekshiruvi ---
-def check_channel_membership(chat_id):
+def get_users():
+    return load_json(USERS_FILE, [])
+
+def add_user(user_id):
+    users = get_users()
+    if user_id not in users:
+        users.append(user_id)
+        save_json(USERS_FILE, users)
+
+# ------------------ CHECK SUB -----------------
+def check_subscription(user_id):
     channels = get_channels()
+    if not channels:
+        return True
     for ch in channels:
         try:
-            member = bot.get_chat_member(ch, chat_id)
-            if member.status not in ["member", "administrator", "creator"]:
+            member = bot.get_chat_member(ch, user_id)
+            if member.status in ["member", "administrator", "creator"]:
+                continue
+            else:
                 return False
-        except:
+        except Exception:
             return False
     return True
 
-# --- Menyular ---
-def main_menu():
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("💬 Suhbat")
-    return kb
-
-def admin_menu():
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("📊 Statistika", "➕ Kanal qo‘shish", "❌ Kanal o‘chirish")
-    kb.add("🔙 Orqaga")
-    return kb
-
-def force_subscribe(chat_id):
-    channels = get_channels()
-    if not channels:
-        return False
+def sub_buttons():
     kb = types.InlineKeyboardMarkup()
-    for ch in channels:
-        kb.add(types.InlineKeyboardButton(
-            text=f"🔗 {ch}",
-            url=f"https://t.me/{ch[1:]}" if ch.startswith("@") else f"https://t.me/{ch}"
-        ))
-    kb.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_subs"))
-    bot.send_message(chat_id, "👉 Botdan foydalanish uchun quyidagi kanallarga obuna bo‘ling:", reply_markup=kb)
-    return True
+    for ch in get_channels():
+        kb.add(types.InlineKeyboardButton(f"🔗 {ch}", url=f"https://t.me/{ch[1:]}"))
+    kb.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_sub"))
+    return kb
 
-# --- OpenRouter AI ---
-def ask_ai(prompt):
-    try:
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": "openai/gpt-4o-mini",
-            "messages": [{"role": "user", "content": prompt}]
-        }
-        resp = requests.post(url, headers=headers, json=data, timeout=30)
-        result = resp.json()
-        return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        logging.error(f"AI error: {e}")
-        return "❌ AI serverida xatolik yuz berdi."
-
-# --- /start ---
+# ------------------ HANDLERS ------------------
 @bot.message_handler(commands=["start"])
-def start(message):
-    chat_id = message.chat.id
-    if not check_channel_membership(chat_id):
-        force_subscribe(chat_id)
+def start_cmd(msg):
+    user_id = msg.from_user.id
+    add_user(user_id)
+    if not check_subscription(user_id):
+        bot.send_message(user_id, "❌ Botdan foydalanish uchun quyidagi kanallarga obuna bo‘ling:", reply_markup=sub_buttons())
         return
-    bot.send_message(chat_id, "👋 Assalomu alaykum! Men AL botman.\nSavollaringizni yozing.", reply_markup=main_menu())
+    bot.send_message(user_id, "🤖 Salom! Men AL-botman. Menga yozishingiz yoki guruhlarda ishlatishingiz mumkin.")
 
-# --- Callback tekshirish ---
-@bot.callback_query_handler(func=lambda call: call.data=="check_subs")
-def recheck(call):
-    if check_channel_membership(call.from_user.id):
-        bot.answer_callback_query(call.id, "✅ Obuna bo‘ldingiz!")
-        bot.send_message(call.message.chat.id, "Botdan foydalanishingiz mumkin ✅", reply_markup=main_menu())
+# Guruhlarda gaplashishi
+@bot.message_handler(func=lambda m: True, content_types=["text"])
+def chat_handler(msg):
+    if msg.chat.type in ["group", "supergroup"]:
+        bot.reply_to(msg, f"👋 Salom {msg.from_user.first_name}!")
     else:
-        bot.answer_callback_query(call.id, "❌ Hali barcha kanallarga obuna bo‘lmadingiz.")
-        force_subscribe(call.message.chat.id)
+        if not check_subscription(msg.from_user.id):
+            bot.send_message(msg.chat.id, "❌ Iltimos, oldin obuna bo‘ling:", reply_markup=sub_buttons())
+            return
+        bot.send_message(msg.chat.id, "🤖 Men siz bilan gaplashishga tayyorman!")
 
-# --- AI suhbat ---
-@bot.message_handler(func=lambda m: m.text=="💬 Suhbat")
-def chat_mode(message):
-    bot.send_message(message.chat.id, "✍️ Menga savolingizni yozing.")
+# ------------------ CALLBACK ------------------
+@bot.callback_query_handler(func=lambda call: call.data == "check_sub")
+def check_sub(call):
+    if check_subscription(call.from_user.id):
+        bot.send_message(call.from_user.id, "✅ Obuna tasdiqlandi! Endi foydalanishingiz mumkin.")
+    else:
+        bot.send_message(call.from_user.id, "❌ Hali ham obuna bo‘lmadingiz.", reply_markup=sub_buttons())
 
-@bot.message_handler(func=lambda m: True)
-def chat(message):
-    chat_id = message.chat.id
-    if chat_id == ADMIN_ID and message.text == "/admin":
-        bot.send_message(chat_id, "Admin paneli:", reply_markup=admin_menu())
-        return
+# ------------------ ADMIN PANEL ----------------
+def admin_keyboard():
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("➕ Kanal qo‘shish", "➖ Kanal o‘chirish")
+    kb.add("📋 Kanallar ro‘yxati")
+    kb.add("👥 Statistika", "📢 Hammaga xabar")
+    return kb
 
-    if not check_channel_membership(chat_id):
-        force_subscribe(chat_id)
-        return
+@bot.message_handler(commands=["admin"])
+def admin_cmd(msg):
+    if msg.from_user.id == ADMIN_ID:
+        bot.send_message(msg.chat.id, "🔐 Admin panel:", reply_markup=admin_keyboard())
 
-    user = get_user(chat_id)
-    user["messages"] += 1
-    update_user(chat_id, user)
+@bot.message_handler(func=lambda m: m.from_user.id == ADMIN_ID)
+def admin_panel(msg):
+    text = msg.text.strip()
 
-    reply = ask_ai(message.text)
-    bot.reply_to(message, reply)
+    if text == "📋 Kanallar ro‘yxati":
+        ch = get_channels()
+        if ch:
+            bot.send_message(msg.chat.id, "📋 Kanallar:\n" + "\n".join(ch))
+        else:
+            bot.send_message(msg.chat.id, "📋 Hozircha kanal qo‘shilmagan.")
 
-# --- Admin panel ---
-@bot.message_handler(func=lambda m: m.chat.id==ADMIN_ID)
-def admin(message):
-    if message.text=="📊 Statistika":
-        users = load_json(USERS_FILE, {})
-        bot.send_message(message.chat.id, f"👥 Jami foydalanuvchilar: {len(users)}")
-    elif message.text=="➕ Kanal qo‘shish":
-        msg = bot.send_message(message.chat.id, "Kanal username kiriting (@ bilan):", reply_markup=types.ForceReply(selective=False))
-        bot.register_next_step_handler(msg, lambda m: add_channel(m.text) or bot.send_message(message.chat.id, f"Kanal qo‘shildi: {m.text}"))
-    elif message.text=="❌ Kanal o‘chirish":
-        msg = bot.send_message(message.chat.id, "O‘chiriladigan kanal username:", reply_markup=types.ForceReply(selective=False))
-        bot.register_next_step_handler(msg, lambda m: remove_channel(m.text) or bot.send_message(message.chat.id, f"Kanal o‘chirildi: {m.text}"))
-    elif message.text=="🔙 Orqaga":
-        bot.send_message(message.chat.id, "Asosiy menyuga qaytildi", reply_markup=main_menu())
+    elif text == "➕ Kanal qo‘shish":
+        bot.send_message(msg.chat.id, "➕ Kanal username kiriting (@ bilan):")
+        bot.register_next_step_handler(msg, add_channel_step)
 
-# --- Flask webhook ---
+    elif text == "➖ Kanal o‘chirish":
+        bot.send_message(msg.chat.id, "➖ O‘chirish uchun kanal username kiriting:")
+        bot.register_next_step_handler(msg, remove_channel_step)
+
+    elif text == "👥 Statistika":
+        users = get_users()
+        bot.send_message(msg.chat.id, f"👥 Foydalanuvchilar soni: {len(users)}")
+
+    elif text == "📢 Hammaga xabar":
+        bot.send_message(msg.chat.id, "📢 Yuboriladigan xabar matnini kiriting:")
+        bot.register_next_step_handler(msg, broadcast_step)
+
+def add_channel_step(msg):
+    add_channel(msg.text.strip())
+    bot.send_message(msg.chat.id, f"✅ {msg.text.strip()} qo‘shildi.")
+
+def remove_channel_step(msg):
+    remove_channel(msg.text.strip())
+    bot.send_message(msg.chat.id, f"❌ {msg.text.strip()} o‘chirildi.")
+
+def broadcast_step(msg):
+    text = msg.text
+    users = get_users()
+    count = 0
+    for uid in users:
+        try:
+            bot.send_message(uid, text)
+            count += 1
+        except:
+            pass
+    bot.send_message(msg.chat.id, f"📢 Xabar {count} ta foydalanuvchiga yuborildi.")
+
+# ------------------ FLASK ---------------------
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
-    update = request.get_json(force=True)
-    if update:
-        bot.process_new_updates([types.Update.de_json(update)])
+    update = request.stream.read().decode("utf-8")
+    bot.process_new_updates([types.Update.de_json(update)])
     return "OK", 200
 
+@app.route("/")
+def index():
+    return "AL-Bot ishlayapti!", 200
+
+# ------------------ START ---------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
