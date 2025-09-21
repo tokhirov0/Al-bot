@@ -100,14 +100,11 @@ def ask_ai(prompt, max_tokens=800):
         resp = requests.post(url, headers=headers, json=payload, timeout=30)
         resp.raise_for_status()
         j = resp.json()
-        # Try common response shapes
-        if isinstance(j, dict):
-            if "choices" in j and len(j["choices"])>0:
-                choice = j["choices"][0]
-                # Newer shape: choice["message"]["content"]
-                content = choice.get("message", {}).get("content") or choice.get("text") or choice.get("message")
-                if content:
-                    return content
+
+        # ✅ To‘g‘ri parsing
+        if "choices" in j and j["choices"]:
+            return j["choices"][0]["message"]["content"]
+
         return "❌ AI javobini olishda muammo yuz berdi."
     except Exception as e:
         logging.exception("ask_ai error")
@@ -219,17 +216,11 @@ def admin_panel(m):
 # ------------ Message handler: AI reply ------------
 @bot.message_handler(func=lambda m: True, content_types=['text'])
 def handle_message(m):
-    # ignore bots
     if m.from_user.is_bot:
         return
 
     uid = m.chat.id
     add_user(uid)
-
-    # admin handled above
-    if m.from_user.id == ADMIN_ID and (m.text or "").strip().startswith("/admin"):
-        # handled in admin flow
-        return
 
     # subscription check
     if not check_subscription(m.from_user.id):
@@ -242,12 +233,11 @@ def handle_message(m):
     except:
         pass
 
-    # Ask AI (this blocks until response; it's OK for small loads)
+    # Ask AI
     prompt = m.text or ""
     reply = ask_ai(prompt)
     try:
         if m.chat.type in ("group", "supergroup"):
-            # reply to the message in group
             bot.reply_to(m, reply)
         else:
             bot.send_message(uid, reply)
