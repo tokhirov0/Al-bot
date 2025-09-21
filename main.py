@@ -126,7 +126,7 @@ def start_cmd(msg):
     if not check_subscription(uid):
         bot.send_message(uid, "❗ Botdan foydalanish uchun avvalo kanallarga obuna bo‘ling:", reply_markup=sub_buttons())
         return
-    bot.send_message(uid, "🤖 Assalomu alaykum! Men AL botman — savolingizni yozing.")
+    bot.send_message(uid, " Assalomu alaykum! Men guliman  — siz blan suxbatlasha olaman.")
 
 @bot.callback_query_handler(func=lambda c: c.data == "check_sub")
 def cb_check_sub(call):
@@ -241,7 +241,7 @@ def handle_message(m):
         logging.exception("Send reply failed")
 
 # ------------ Flask webhook endpoint ------------
-@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+@app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     try:
         update = request.get_json(force=True)
@@ -254,7 +254,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "AL-Bot is running", 200
+    return "AL-Bot is running ✅", 200
 
 # ------------ Run ------------
 if __name__ == "__main__":
