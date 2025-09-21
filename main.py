@@ -14,10 +14,10 @@ logging.basicConfig(level=logging.INFO)
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+HF_API_KEY = os.getenv("HF_API_KEY")
 
-if not BOT_TOKEN or not OPENROUTER_API_KEY or not ADMIN_ID:
-    logging.error("Please set BOT_TOKEN, ADMIN_ID and OPENROUTER_API_KEY in environment")
+if not BOT_TOKEN or not HF_API_KEY or not ADMIN_ID:
+    logging.error("Please set BOT_TOKEN, ADMIN_ID and HF_API_KEY in environment")
     raise SystemExit("Missing environment variables")
 
 bot = TeleBot(BOT_TOKEN, parse_mode="HTML")
@@ -84,30 +84,29 @@ def sub_buttons():
     kb.add(types.InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_sub"))
     return kb
 
-# ------------ OpenRouter AI ------------
-def ask_ai(prompt, max_tokens=800):
+# ------------ HuggingFace AI ------------
+def ask_ai(prompt, max_tokens=500):
     try:
-        url = "https://openrouter.ai/api/v1/chat/completions"
+        url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
         headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Authorization": f"Bearer {HF_API_KEY}",
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "openai/gpt-4o-mini",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens
+            "inputs": prompt,
+            "parameters": {"max_new_tokens": max_tokens}
         }
-        resp = requests.post(url, headers=headers, json=payload, timeout=30)
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
         resp.raise_for_status()
         j = resp.json()
 
-        if "choices" in j and j["choices"]:
-            return j["choices"][0]["message"]["content"]
+        if isinstance(j, list) and "generated_text" in j[0]:
+            return j[0]["generated_text"]
 
         return "❌ AI javobini olishda muammo yuz berdi."
     except Exception as e:
         logging.exception("ask_ai error")
-        return "❌ AI serverida xatolik yuz berdi. Keyinroq urinib ko‘ring."
+        return "❌ HuggingFace serverida xatolik yuz berdi."
 
 # ------------ Keyboards ------------
 def admin_keyboard():
@@ -126,7 +125,7 @@ def start_cmd(msg):
     if not check_subscription(uid):
         bot.send_message(uid, "❗ Botdan foydalanish uchun avvalo kanallarga obuna bo‘ling:", reply_markup=sub_buttons())
         return
-    bot.send_message(uid, " Assalomu alaykum! Men guliman  — siz blan suxbatlasha olaman.")
+    bot.send_message(uid, "👋 Assalomu alaykum! Men siz bilan suhbat qura olaman.")
 
 @bot.callback_query_handler(func=lambda c: c.data == "check_sub")
 def cb_check_sub(call):
@@ -146,7 +145,7 @@ def add_channel_flow(msg):
         bot.send_message(ADMIN_ID, "❌ Kanal username @ bilan boshlanishi kerak.")
         return
     if ch in channels:
-        bot.send_message(ADMIN_ID, "⚠️ Bu kanal allaqachon roʻyxatda.")
+        bot.send_message(ADMIN_ID, "⚠️ Bu kanal allaqachon ro‘yxatda.")
         return
     channels.append(ch)
     save_channels(channels)
@@ -158,7 +157,7 @@ def remove_channel_flow(msg):
     if ch in channels:
         channels.remove(ch)
         save_channels(channels)
-        bot.send_message(ADMIN_ID, f"🗑 Kanal oʻchirildi: {ch}")
+        bot.send_message(ADMIN_ID, f"🗑 Kanal o‘chirildi: {ch}")
     else:
         bot.send_message(ADMIN_ID, "❌ Kanal topilmadi.")
 
