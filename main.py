@@ -150,7 +150,7 @@ def add_channel_flow(msg):
         return
     channels.append(ch)
     save_channels(channels)
-    bot.send_message(ADMIN_ID, f"✅ Kanal qoʻshildi: {ch}")
+    bot.send_message(ADMIN_ID, f"✅ Kanal qo‘shildi: {ch}")
 
 def remove_channel_flow(msg):
     ch = msg.text.strip()
@@ -256,7 +256,7 @@ def webhook():
 def index():
     return "AL-Bot is running", 200
 
-# ------------ Run (local / Render) ------------
+# ------------ Run ------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
